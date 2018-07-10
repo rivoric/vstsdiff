@@ -1,4 +1,4 @@
-from __future__ import print_function
+from __future__ import print_function, with_statement
 
 import sys
 import os
@@ -145,7 +145,9 @@ if __name__ == "__main__":
     parser.add_option('-p','--project', action="store", dest="proj",
                       help="[Required] VSTS project name")
     parser.add_option('-c','--compare-exe', action="store", dest="bc",
-                      help="[Optional] Path to the comparison program, defaults to Beyond Compare 4 in default location")
+                      help="[Optional] Path to the comparison program, will attempt to find Beyond Compare 4 in default locations then use difflib")
+    parser.add_option('-n','--no-search', dest="nosearch", default = False, action = 'store_true',
+                      help="[Optional] Do not search for comparision program, use difflib instead")
     parser.add_option('-i','--indent', action="store", type="int", dest="indent", default=2,
                       help="[Optional] Number of spaces to indent the json file, defaults to 2")
     parser.add_option('-d','--delete-temp-files', dest="deltmp", default = False, action = 'store_true',
@@ -163,14 +165,29 @@ if __name__ == "__main__":
     )
 
     if options.bc:
-        bcexe = options.bc
+        # diff executable passed in arguments
+        if os.path.isfile(options.bc):
+            bcexe = options.bc
+        else:
+            sys.exit(3)
+    elif options.nosearch:
+        # use Python diff library
+        bcexe = None
     else:
         bcexe = _get_diff_exe()
-        if bcexe is None:
-            sys.exit(3)
 
-    commandline = [ bcexe, envfile1, envfile2 ]
-    subprocess.call(commandline)
+    if bcexe is None:
+        # use difflib
+        import difflib
+        openfile1 = open(envfile1, 'U').readlines()
+        openfile2 = open(envfile2, 'U').readlines()
+        diff = difflib.HtmlDiff().make_file(openfile1,openfile2,envfile1,envfile2)
+        sys.stdout.writelines(diff)
+    else:
+        # use provided (or found) diff executable
+        commandline = [ bcexe, envfile1, envfile2 ]
+        subprocess.call(commandline)
+
     if options.deltmp:
         os.unlink(envfile1)
         os.unlink(envfile2)
