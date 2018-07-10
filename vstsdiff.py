@@ -53,8 +53,30 @@ def _VSTS_header (username, PAT_token):
         }
     return vstsheader
 
+def _get_diff_exe ():
+    """Try a list of common comparison tools location to see if any exist"""
+    difflist = [
+        os.path.join(os.environ['ProgramFiles'],"Beyond Compare 4","BCompare.exe"),
+        os.path.join(os.environ['ProgramFiles(x86)'],"Beyond Compare 4","BCompare.exe"),
+        os.path.join(os.environ['ProgramW6432'],"Beyond Compare 4","BCompare.exe")
+    ]
+
+    bcfile = None
+    for diffpath in difflist:
+        if os.path.isfile(diffpath):
+            bcfile = diffpath
+            break
+    return bcfile
+
 def environment_files (username, PAT_token, account, project, release_definition, json_indent=2):
-    """d"""
+    """Use the VSTS API to get the release definition and then write the 2 selected envs to a file
+    username = VSTS username (usually an email address)
+    PAT_token = PAT token created in VSTS
+    account = VSTS account name (account.visualstudio.com)
+    project = VSTS project (visualstudio.com/project)
+    release_definition = release definition name
+    json_indent = number of spaces to indent each level of json document when saved
+    returns 2 filenames (tuple)"""
     vstsheader = _VSTS_header(username,PAT_token)
 
     list_uri = "https://{0}.vsrm.visualstudio.com/{1}/_apis/release/definitions?api-version=4.1-preview.3".format(account,project)
@@ -95,12 +117,13 @@ def environment_files (username, PAT_token, account, project, release_definition
         env2 = _select_env("Select right environment for comparision",numenvs,env1)
 
     file1 = _write_env_file(releasedef['environments'][env1], indent=json_indent, name=releasedef['environments'][env1]['name'])
-    file2 = _write_env_file(releasedef['environments'][env2], indent=json_indent, name=releasedef['environments'][env1]['name'])
+    file2 = _write_env_file(releasedef['environments'][env2], indent=json_indent, name=releasedef['environments'][env2]['name'])
 
     return file1, file2
 
 def check_required_arguments(options, parser):
-    """Checks that all options starting with [Required] have been included"""
+    """Checks that all options starting with [Required] have been included
+    Taken from Fausto Luiz Santin answer to SO 4407539"""
     missing_options = []
     for option in parser.option_list:
         if option.help.startswith('[Required]') and eval('options.' + option.dest) == None:
@@ -125,6 +148,8 @@ if __name__ == "__main__":
                       help="[Optional] Path to the comparison program, defaults to Beyond Compare 4 in default location")
     parser.add_option('-i','--indent', action="store", type="int", dest="indent", default=2,
                       help="[Optional] Number of spaces to indent the json file, defaults to 2")
+    parser.add_option('-d','--delete-temp-files', dest="deltmp", default = False, action = 'store_true',
+                      help="[Optional] Delete the temp files on exit")
     options, additional_args = parser.parse_args()
     check_required_arguments(options, parser)
 
@@ -140,9 +165,12 @@ if __name__ == "__main__":
     if options.bc:
         bcexe = options.bc
     else:
-        bcexe = os.path.join(os.environ['ProgramFiles'],"Beyond Compare 4","BCompare.exe")
+        bcexe = _get_diff_exe()
+        if bcexe is None:
+            sys.exit(3)
 
     commandline = [ bcexe, envfile1, envfile2 ]
     subprocess.call(commandline)
-    #os.unlink(envfile1.name)
-    #os.unlink(envfile2.name)
+    if options.deltmp:
+        os.unlink(envfile1)
+        os.unlink(envfile2)
